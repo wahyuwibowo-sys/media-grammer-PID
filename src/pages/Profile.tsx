@@ -45,13 +45,13 @@ export const Profile: React.FC = () => {
   // Form State initialized from userProfile
   const [formData, setFormData] = useState({
     nama: userProfile?.nama || '',
-    kelas: userProfile?.kelas || 'X RPL 1',
-    jurusan: userProfile?.jurusan || 'Rekayasa Perangkat Lunak',
+    kelas: userProfile?.kelas || (userProfile?.role === 'siswa' ? 'X RPL 1' : ''),
+    jurusan: userProfile?.jurusan || (userProfile?.role === 'siswa' ? 'Rekayasa Perangkat Lunak' : ''),
     nis: userProfile?.nis || '',
     nip: userProfile?.nip || '',
     mataPelajaran: userProfile?.mataPelajaran || 'Bahasa Inggris SMKN 1 Sidayu Kelas X',
     photoURL: userProfile?.photoURL || PRESET_AVATARS[0].url,
-    bio: userProfile?.bio || 'Mempersiapkan kemahiran bahasa Inggris untuk karir industri global.',
+    bio: userProfile?.bio || (userProfile?.role === 'admin' ? 'Memegang kendali penuh pengelolaan akun, kelas, nilai, dan modul grammar interaktif SMKN 1 Sidayu.' : 'Mempersiapkan kemahiran bahasa Inggris untuk karir industri global.'),
     targetScore: userProfile?.targetScore || 95,
   });
 
@@ -59,13 +59,13 @@ export const Profile: React.FC = () => {
     if (userProfile) {
       setFormData({
         nama: userProfile.nama || '',
-        kelas: userProfile.kelas || 'X RPL 1',
-        jurusan: userProfile.jurusan || 'Rekayasa Perangkat Lunak',
+        kelas: userProfile.kelas || (userProfile.role === 'siswa' ? 'X RPL 1' : ''),
+        jurusan: userProfile.jurusan || (userProfile.role === 'siswa' ? 'Rekayasa Perangkat Lunak' : ''),
         nis: userProfile.nis || '',
         nip: userProfile.nip || '',
         mataPelajaran: userProfile.mataPelajaran || 'Bahasa Inggris SMKN 1 Sidayu Kelas X',
         photoURL: userProfile.photoURL || PRESET_AVATARS[0].url,
-        bio: userProfile.bio || 'Mempersiapkan kemahiran bahasa Inggris untuk karir industri global.',
+        bio: userProfile.bio || (userProfile.role === 'admin' ? 'Memegang kendali penuh pengelolaan akun, kelas, nilai, dan modul grammar interaktif SMKN 1 Sidayu.' : 'Mempersiapkan kemahiran bahasa Inggris untuk karir industri global.'),
         targetScore: userProfile.targetScore || 95,
       });
     }
@@ -83,17 +83,25 @@ export const Profile: React.FC = () => {
     e.preventDefault();
     triggerHaptic();
 
-    await updateUserBio({
+    const updates: Partial<any> = {
       nama: formData.nama.trim(),
-      kelas: formData.kelas,
-      jurusan: formData.jurusan.trim(),
-      nis: formData.nis.trim(),
-      nip: formData.nip.trim(),
-      mataPelajaran: formData.mataPelajaran.trim(),
       photoURL: formData.photoURL,
       bio: formData.bio.trim(),
-      targetScore: Number(formData.targetScore),
-    });
+    };
+
+    if (userProfile?.role === 'siswa') {
+      updates.kelas = formData.kelas;
+      updates.jurusan = formData.jurusan.trim();
+      updates.nis = formData.nis.trim();
+      updates.targetScore = Number(formData.targetScore);
+    } else if (userProfile?.role === 'guru') {
+      updates.mataPelajaran = formData.mataPelajaran.trim();
+      updates.nip = formData.nip.trim();
+    } else if (userProfile?.role === 'admin') {
+      updates.nip = formData.nip.trim();
+    }
+
+    await updateUserBio(updates);
 
     setIsEditing(false);
     setSaveSuccess(true);
@@ -208,6 +216,24 @@ export const Profile: React.FC = () => {
                   <span className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 font-bold text-xs border border-amber-500/30 flex items-center gap-1.5">
                     <BookOpen className="w-3.5 h-3.5" />
                     Mapel: {userProfile?.mataPelajaran || 'Bahasa Inggris SMK'}
+                  </span>
+                  {userProfile?.nip && (
+                    <span className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700 flex items-center gap-1">
+                      <IdCard className="w-3.5 h-3.5 text-slate-400" />
+                      NIP: {userProfile.nip}
+                    </span>
+                  )}
+                </>
+              )}
+
+              {userProfile?.role === 'admin' && (
+                <>
+                  <span className="px-3 py-1 rounded-xl bg-rose-500/20 text-rose-300 font-bold text-xs border border-rose-500/30 flex items-center gap-1.5">
+                    <School className="w-3.5 h-3.5" />
+                    {userProfile?.sekolah || 'SMKN 1 Sidayu'}
+                  </span>
+                  <span className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700">
+                    {userProfile?.jabatan || 'Koordinator IT & Administrator Sistem'}
                   </span>
                   {userProfile?.nip && (
                     <span className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs border border-slate-700 flex items-center gap-1">
@@ -348,19 +374,36 @@ export const Profile: React.FC = () => {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">
-                  Jurusan / Konsentrasi Keahlian *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.jurusan}
-                  onChange={e => setFormData({ ...formData, jurusan: e.target.value })}
-                  placeholder="Contoh: Rekayasa Perangkat Lunak"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
+              {userProfile?.role === 'siswa' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">
+                    Jurusan / Konsentrasi Keahlian *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.jurusan}
+                    onChange={e => setFormData({ ...formData, jurusan: e.target.value })}
+                    placeholder="Contoh: Rekayasa Perangkat Lunak"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+              )}
+
+              {userProfile?.role === 'admin' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">
+                    Jabatan / Unit Tugas Admin
+                  </label>
+                  <input
+                    type="text"
+                    value={userProfile?.jabatan || 'Koordinator IT & Administrator Utama'}
+                    onChange={e => setFormData({ ...formData, bio: formData.bio })}
+                    readOnly
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-xs sm:text-sm text-slate-300 focus:outline-none cursor-not-allowed"
+                  />
+                </div>
+              )}
 
               {userProfile?.role === 'guru' && (
                 <div className="sm:col-span-2">

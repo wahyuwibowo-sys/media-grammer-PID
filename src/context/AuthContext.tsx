@@ -31,13 +31,14 @@ export const ADMIN_EMAILS = [
   'ahmadwibowo62@guru.sma.belajar.id',
   'heru@smanike-gresik.sch.id',
   'admin@smkn1sidayu.sch.id',
+  'wahyu.wibowo@smkn1sidayu.sch.id',
 ];
 
 export const checkIsAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const lower = email.toLowerCase().trim();
   if (ADMIN_EMAILS.some(a => a.toLowerCase() === lower)) return true;
-  if (lower.startsWith('ahmadwibowo') || lower.startsWith('heru@') || lower.startsWith('admin@')) return true;
+  if (lower.startsWith('ahmadwibowo') || lower.startsWith('heru@') || lower.startsWith('admin@') || lower.startsWith('wahyu.wibowo') || lower.includes('wibowo')) return true;
   if (lower === 'admin' || lower === 'administrator') return true;
   return false;
 };
@@ -168,14 +169,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: firebaseUser.uid,
           email: firebaseUser.email || data.email,
           role: verifiedRole,
-          nama: verifiedRole === 'admin' ? (data.nama || adminProf.nama) : (data.nama || firebaseUser.displayName || 'Pengguna SMK'),
+          nama: verifiedRole === 'admin' ? (data.nama || firebaseUser.displayName || adminProf.nama) : (data.nama || firebaseUser.displayName || 'Pengguna SMK'),
           sekolah: data.sekolah || adminProf.sekolah,
           jabatan: verifiedRole === 'admin' ? (data.jabatan || adminProf.jabatan) : data.jabatan,
         };
 
-        // If role needed auto-correction for super admin, sync back
-        if (data.role !== verifiedRole) {
-          await updateDoc(userRef, { role: verifiedRole });
+        if (verifiedRole === 'admin') {
+          delete verifiedProfile.kelas;
+          delete verifiedProfile.nis;
+          delete (verifiedProfile as any).jurusan;
+        } else if (verifiedRole === 'guru') {
+          delete verifiedProfile.kelas;
+          delete verifiedProfile.nis;
+        }
+
+        // If role needed auto-correction for super admin or clean up legacy admin class
+        if (data.role !== verifiedRole || (verifiedRole === 'admin' && data.kelas)) {
+          try {
+            await updateDoc(userRef, { 
+              role: verifiedRole,
+              ...(verifiedRole === 'admin' ? { kelas: '', jurusan: '', nis: '' } : {})
+            });
+          } catch {}
         }
 
         setUserProfile(verifiedProfile);
@@ -190,8 +205,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Pengguna SMK'),
           email: firebaseUser.email || '',
           role: initialRole,
-          kelas: initialRole === 'siswa' ? 'X RPL 1' : 'Semua Kelas',
-          jurusan: initialRole === 'siswa' ? 'Rekayasa Perangkat Lunak' : 'Kurikulum Merdeka',
+          kelas: initialRole === 'siswa' ? 'X RPL 1' : undefined,
+          jurusan: initialRole === 'siswa' ? 'Rekayasa Perangkat Lunak' : undefined,
           sekolah: adminProf.sekolah,
           jabatan: initialRole === 'admin' ? adminProf.jabatan : undefined,
           photoURL: firebaseUser.photoURL || undefined,
@@ -208,11 +223,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const adminProf = getStoredAdminCustomProfile();
       const fallback: UserProfile = {
         uid: firebaseUser.uid,
-        nama: isRecognizedAdmin ? adminProf.nama : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Pengguna SMK'),
+        nama: isRecognizedAdmin ? (firebaseUser.displayName || adminProf.nama) : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Pengguna SMK'),
         email: firebaseUser.email || '',
         role: isRecognizedAdmin ? 'admin' : 'siswa',
-        kelas: 'X RPL 1',
-        jurusan: 'Rekayasa Perangkat Lunak',
+        kelas: isRecognizedAdmin ? undefined : 'X RPL 1',
+        jurusan: isRecognizedAdmin ? undefined : 'Rekayasa Perangkat Lunak',
         sekolah: adminProf.sekolah,
         jabatan: isRecognizedAdmin ? adminProf.jabatan : undefined
       };
@@ -237,7 +252,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (parsed && parsed.role === role) {
           if (role === 'admin') {
             const adminProf = getStoredAdminCustomProfile();
-            return { ...parsed, nama: adminProf.nama, sekolah: adminProf.sekolah, jabatan: adminProf.jabatan, bio: adminProf.bio };
+            const cleanAdmin = { ...parsed, nama: parsed.nama || adminProf.nama, sekolah: adminProf.sekolah, jabatan: adminProf.jabatan, bio: adminProf.bio };
+            delete cleanAdmin.kelas;
+            delete cleanAdmin.jurusan;
+            delete cleanAdmin.nis;
+            return cleanAdmin;
+          } else if (role === 'guru') {
+            const cleanGuru = { ...parsed };
+            delete cleanGuru.kelas;
+            delete cleanGuru.nis;
+            return cleanGuru;
           }
           return parsed;
         }
@@ -486,8 +510,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           nama: assignedRole === 'admin' ? (res.user.displayName || adminProf.nama) : (res.user.displayName || 'Pengguna Google SMK'),
           email: res.user.email || '',
           role: assignedRole,
-          kelas: assignedRole === 'siswa' ? 'X RPL 1' : 'Semua Kelas',
-          jurusan: 'SMK',
+          kelas: assignedRole === 'siswa' ? 'X RPL 1' : undefined,
+          jurusan: assignedRole === 'siswa' ? 'Rekayasa Perangkat Lunak' : undefined,
           sekolah: adminProf.sekolah,
           jabatan: assignedRole === 'admin' ? adminProf.jabatan : undefined,
           photoURL: res.user.photoURL || undefined,
@@ -624,7 +648,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     delete sanitizedUpdates.uid;
 
+    if (userProfile.role === 'admin' || sanitizedUpdates.role === 'admin') {
+      delete sanitizedUpdates.kelas;
+      delete sanitizedUpdates.jurusan;
+      delete sanitizedUpdates.nis;
+    } else if (userProfile.role === 'guru') {
+      delete sanitizedUpdates.kelas;
+      delete sanitizedUpdates.nis;
+    }
+
     const updated = { ...userProfile, ...sanitizedUpdates, updatedAt: new Date().toISOString() };
+    if (userProfile.role === 'admin') {
+      delete updated.kelas;
+      delete updated.jurusan;
+      delete updated.nis;
+    } else if (userProfile.role === 'guru') {
+      delete updated.kelas;
+      delete updated.nis;
+    }
+
     setUserProfile(updated);
 
     localStorage.setItem('gcs_active_profile', JSON.stringify(updated));

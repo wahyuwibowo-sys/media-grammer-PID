@@ -200,9 +200,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                   }`}>
                     {userProfile?.role || 'siswa'}
                   </span>
-                  <span className="text-[10px] text-slate-400 truncate max-w-[70px]">
-                    {userProfile?.kelas || 'X RPL'}
-                  </span>
+                  {userProfile?.role === 'siswa' ? (
+                    <span className="text-[10px] text-slate-400 truncate max-w-[80px]" title={userProfile?.kelas || 'X RPL 1'}>
+                      {userProfile?.kelas || 'X RPL 1'}
+                    </span>
+                  ) : userProfile?.role === 'admin' ? (
+                    <span className="text-[10px] text-rose-300/90 font-medium truncate max-w-[90px]" title="Administrator SMKN 1 Sidayu">
+                      SMKN 1 Sidayu
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-300/90 font-medium truncate max-w-[90px]" title="Guru SMKN 1 Sidayu">
+                      Guru Mapel
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
