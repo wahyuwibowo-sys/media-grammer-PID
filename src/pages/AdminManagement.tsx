@@ -30,7 +30,8 @@ import {
   KeyRound,
   Lock,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  UserX
 } from 'lucide-react';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -58,6 +59,16 @@ import {
   isScoresCleared, 
   setScoresClearedState 
 } from '../utils/scoresManager';
+import {
+  StudentItem,
+  getStoredStudents,
+  saveStoredStudents,
+  purgeAllStudentsFromStorage,
+  restoreDefaultStudents,
+  addSingleStudentToStorage,
+  updateStudentInStorage,
+  deleteSingleStudentFromStorage
+} from '../utils/studentsManager';
 
 interface TeacherItem {
   id: string;
@@ -65,15 +76,6 @@ interface TeacherItem {
   nip: string;
   mapel: string;
   kelas: string;
-  email: string;
-}
-
-interface StudentItem {
-  id: string;
-  nama: string;
-  nis: string;
-  kelas: string;
-  jurusan: string;
   email: string;
 }
 
@@ -123,16 +125,13 @@ export const AdminManagement: React.FC = () => {
     { id: 'g4', nama: 'Siti Rahmawati, S.Pd.', nip: '19920110 201902 2 007', mapel: 'English Communication Skills', kelas: 'X RPL 1, X AKL 1', email: 'siti.rahma@smkn1sidayu.sch.id' },
   ]);
 
-  const [students, setStudents] = useState<StudentItem[]>([
-    { id: 's1', nama: 'Ahmad Rizky Pratama', nis: '232410145', kelas: 'X RPL 1', jurusan: 'Rekayasa Perangkat Lunak', email: 'rizky.siswa@smkn1sidayu.sch.id' },
-    { id: 's2', nama: 'Siti Nur Aisyah', nis: '232410146', kelas: 'X AKL 1', jurusan: 'Akuntansi & Keuangan', email: 'siti.siswa@smkn1sidayu.sch.id' },
-    { id: 's3', nama: 'Budi Santoso', nis: '232410147', kelas: 'X TKJ 1', jurusan: 'Teknik Komputer & Jaringan', email: 'budi.siswa@smkn1sidayu.sch.id' },
-    { id: 's4', nama: 'Dian Permata', nis: '232410148', kelas: 'X DPIB 1', jurusan: 'Desain Pemodelan Bangunan', email: 'dian.siswa@smkn1sidayu.sch.id' },
-    { id: 's5', nama: 'Farhan Maulana', nis: '232410149', kelas: 'X Otomotif 1', jurusan: 'Teknik Kendaraan Ringan', email: 'farhan.siswa@smkn1sidayu.sch.id' },
-    { id: 's6', nama: 'Zahra Amelia', nis: '232410150', kelas: 'X RPL 2', jurusan: 'Rekayasa Perangkat Lunak', email: 'zahra.siswa@smkn1sidayu.sch.id' },
-    { id: 's7', nama: 'Muhammad Dimas', nis: '232410151', kelas: 'X RPL 2', jurusan: 'Rekayasa Perangkat Lunak', email: 'dimas.siswa@smkn1sidayu.sch.id' },
-    { id: 's8', nama: 'Aulia Rahma Putri', nis: '232410152', kelas: 'X AKL 2', jurusan: 'Akuntansi & Keuangan', email: 'aulia.siswa@smkn1sidayu.sch.id' },
-  ]);
+  const [students, setStudents] = useState<StudentItem[]>(getStoredStudents());
+
+  // Modal State for Hapus Siswa Total
+  const [showDeleteAllStudentsModal, setShowDeleteAllStudentsModal] = useState(false);
+  const [purgeScoresWithStudents, setPurgeScoresWithStudents] = useState(true);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeletingAllStudents, setIsDeletingAllStudents] = useState(false);
 
   // Managed Classes State (Dynamic and Persistent)
   const [classes, setClasses] = useState<ClassRoomItem[]>(getStoredClasses());
@@ -213,13 +212,20 @@ export const AdminManagement: React.FC = () => {
   const [showPassText, setShowPassText] = useState(false);
   const [passError, setPassError] = useState<string | null>(null);
 
-  // Listen to external class updates
+  // Listen to external class & student updates
   useEffect(() => {
     const handleClassesChange = () => {
       setClasses(getStoredClasses());
     };
+    const handleStudentsChange = () => {
+      setStudents(getStoredStudents());
+    };
     window.addEventListener('gcs_classes_updated', handleClassesChange);
-    return () => window.removeEventListener('gcs_classes_updated', handleClassesChange);
+    window.addEventListener('gcs_students_updated', handleStudentsChange);
+    return () => {
+      window.removeEventListener('gcs_classes_updated', handleClassesChange);
+      window.removeEventListener('gcs_students_updated', handleStudentsChange);
+    };
   }, []);
 
   // Filtered lists
@@ -382,7 +388,9 @@ export const AdminManagement: React.FC = () => {
       }
       setActionSuccessMsg(`Admin berhasil mengimpor ${parsedPreview.length} Role Guru!`);
     } else {
-      setStudents(prev => [...prev, ...parsedPreview]);
+      const mergedStudents = [...students, ...parsedPreview];
+      setStudents(mergedStudents);
+      saveStoredStudents(mergedStudents);
       for (const item of parsedPreview) {
         try {
           await setDoc(doc(db, 'users', item.id), {
@@ -457,7 +465,8 @@ export const AdminManagement: React.FC = () => {
         email: cleanEmail,
       };
 
-      setStudents(prev => [newStudent, ...prev]);
+      await addSingleStudentToStorage(newStudent);
+      setStudents(getStoredStudents());
 
       try {
         await setDoc(doc(db, 'users', newId), {
@@ -532,7 +541,8 @@ export const AdminManagement: React.FC = () => {
         jurusan: editItem.jurusanOrMapel.trim(),
         email: editItem.email.trim(),
       };
-      setStudents(prev => prev.map(s => s.id === editItem.id ? updatedStudent : s));
+      await updateStudentInStorage(updatedStudent);
+      setStudents(getStoredStudents());
       setActionSuccessMsg(`Data Siswa "${updatedStudent.nama}" berhasil diperbarui!`);
 
       try {
@@ -556,16 +566,17 @@ export const AdminManagement: React.FC = () => {
   };
 
   // DELETE USER
-  const handleDeleteUser = (type: 'guru' | 'siswa', id: string, name: string) => {
+  const handleDeleteUser = async (type: 'guru' | 'siswa', id: string, name: string) => {
     triggerHaptic();
     if (confirm(`Apakah Anda yakin ingin menghapus data ${type === 'guru' ? 'Guru' : 'Siswa'} "${name}"?`)) {
       if (type === 'guru') {
         setTeachers(prev => prev.filter(t => t.id !== id));
       } else {
-        setStudents(prev => prev.filter(s => s.id !== id));
+        await deleteSingleStudentFromStorage(id);
+        setStudents(getStoredStudents());
       }
       try {
-        deleteDoc(doc(db, 'users', id));
+        await deleteDoc(doc(db, 'users', id));
       } catch {}
       soundManager.playWrong();
       setActionSuccessMsg(`Data "${name}" berhasil dihapus.`);
@@ -685,6 +696,54 @@ export const AdminManagement: React.FC = () => {
     setScoresClearedState(false);
     soundManager.playVictory();
     setActionSuccessMsg('Status nilai diaktifkan kembali. Data nilai contoh dapat diakses kembali di menu Penilaian.');
+    setTimeout(() => setActionSuccessMsg(null), 3500);
+  };
+
+  // HAPUS SISWA TOTAL (PURGE ALL STUDENTS)
+  const handleDeleteAllStudents = async () => {
+    triggerHaptic();
+    setIsDeletingAllStudents(true);
+
+    try {
+      const deletedStudentCount = await purgeAllStudentsFromStorage(true);
+      setStudents([]);
+
+      let extraMsg = '';
+      if (purgeScoresWithStudents) {
+        const deletedScoresCount = await clearAllScoresFromDb();
+        extraMsg = ` dan ${deletedScoresCount} catatan nilai di Firestore`;
+      }
+
+      // Add to activity logs
+      setActivityLogs(prev => [
+        { 
+          time: new Date().toLocaleTimeString('id-ID'), 
+          user: userProfile?.nama || 'Administrator', 
+          action: `Menghapus TOTAL seluruh data siswa (${deletedStudentCount} siswa)${extraMsg}` 
+        },
+        ...prev
+      ]);
+
+      setShowDeleteAllStudentsModal(false);
+      setDeleteConfirmationText('');
+      soundManager.playWrong();
+      setActionSuccessMsg(`Berhasil menghapus TOTAL seluruh data siswa (${deletedStudentCount} siswa)${extraMsg}!`);
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    } catch (err) {
+      console.error('Error deleting all students:', err);
+      setActionSuccessMsg('Terjadi kendala saat menghapus siswa.');
+    } finally {
+      setIsDeletingAllStudents(false);
+    }
+  };
+
+  const handleRestoreSampleStudents = () => {
+    triggerHaptic();
+    const restored = restoreDefaultStudents();
+    setStudents(restored);
+    soundManager.playCorrect();
+    triggerConfetti();
+    setActionSuccessMsg(`Data contoh ${restored.length} siswa berhasil dimuat ulang ke sistem!`);
     setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
@@ -847,6 +906,23 @@ export const AdminManagement: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => {
+              triggerHaptic();
+              setDeleteConfirmationText('');
+              setShowDeleteAllStudentsModal(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-black flex items-center gap-1.5 shadow-sm active:scale-95 transition cursor-pointer"
+            title="Menu Hapus Siswa Total (Pengosongan Akun Siswa)"
+          >
+            <UserX className="w-3.5 h-3.5 text-rose-400" />
+            <span>Hapus Siswa Total</span>
+            <span className="px-1.5 py-0.2 rounded-md bg-rose-950 text-rose-200 text-[10px] font-mono font-bold border border-rose-800">
+              {students.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={elevateToAdmin}
             className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-black border border-rose-500/30 flex items-center gap-1.5 shadow-sm hover:bg-rose-500/30 active:scale-95 transition"
             title="Pastikan hak akses penuh Administrator aktif"
@@ -962,6 +1038,22 @@ export const AdminManagement: React.FC = () => {
                 <UserPlus className="w-4 h-4" />
                 Buat User Baru (Guru / Siswa)
               </button>
+
+              {userSubTab === 'siswa' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic();
+                    setDeleteConfirmationText('');
+                    setShowDeleteAllStudentsModal(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-heading font-black text-xs sm:text-sm shadow-md shadow-rose-600/30 flex items-center gap-2 active:scale-95 transition cursor-pointer"
+                  title="Menu Hapus Siswa Total"
+                >
+                  <UserX className="w-4 h-4" />
+                  Hapus Siswa Total
+                </button>
+              )}
             </div>
           </div>
 
@@ -1051,21 +1143,86 @@ export const AdminManagement: React.FC = () => {
           {/* Students list */}
           {userSubTab === 'siswa' && (
             <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800 flex-wrap gap-2">
                 <h3 className="font-heading font-bold text-white text-base flex items-center gap-2">
                   <Users className="w-5 h-5 text-emerald-400" />
                   Daftar Siswa Terdaftar ({filteredStudents.length} Siswa)
                 </h3>
-                <button
-                  onClick={() => handleDownloadTemplate('siswa')}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Unduh Template Siswa (.csv)
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {students.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic();
+                        setDeleteConfirmationText('');
+                        setShowDeleteAllStudentsModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      title="Menu Hapus Siswa Total"
+                    >
+                      <UserX className="w-3.5 h-3.5 text-rose-400" />
+                      Hapus Siswa Total ({students.length})
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleRestoreSampleStudents}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      title="Muat ulang data contoh siswa"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                      Muat Data Contoh Siswa
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDownloadTemplate('siswa')}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Unduh Template Siswa (.csv)
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3">
+              {filteredStudents.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-slate-800/40 border border-slate-700/60 space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-300">
+                    {searchQuery ? 'Tidak ada siswa yang sesuai pencarian.' : 'Seluruh data akun siswa kosong / telah dihapus.'}
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    {searchQuery 
+                      ? 'Coba ubah kata kunci pencarian nama, NIS, atau kelas.' 
+                      : 'Data siswa siap diisi untuk tahun ajaran baru via CSV/Excel atau Anda dapat memuat ulang data contoh jika diperlukan pengujian.'}
+                  </p>
+                  {!searchQuery && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleRestoreSampleStudents}
+                        className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                        Muat Data Contoh (8 Siswa)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTemplateTargetRole('siswa');
+                          setShowTemplateModal(true);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Input CSV / Excel Siswa
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
                 {filteredStudents.map(s => (
                   <div key={s.id} className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
